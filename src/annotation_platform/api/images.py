@@ -26,9 +26,12 @@ from .deps import (
     record_event,
     safe_img,
 )
-from .security import verify_api_key
+from .security import verify_api_key, verify_api_key_or_query
 
 router = APIRouter(tags=["images"], dependencies=[Depends(verify_api_key)])
+# Rotas GET de mídia (thumb/tiles/full): <img> e o loader de tiles do canvas
+# não enviam headers — aceitam ?api_key= via verify_api_key_or_query.
+media_router = APIRouter(tags=["images"], dependencies=[Depends(verify_api_key_or_query)])
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -109,7 +112,7 @@ def list_images(
     return {"items": page, "next_cursor": next_cursor, "total": len(items)}
 
 
-@router.get("/projects/{slug}/images/{img}/thumb")
+@media_router.get("/projects/{slug}/images/{img}/thumb")
 def get_thumb(slug: str, img: str, settings: SettingsDep) -> FileResponse:
     """Thumbnail 320px cacheado em .cache/thumbs/<slug>/ (derivado, JPEG)."""
     root = project_root(settings, slug)
@@ -125,7 +128,7 @@ def get_thumb(slug: str, img: str, settings: SettingsDep) -> FileResponse:
     return FileResponse(dest, media_type="image/jpeg")
 
 
-@router.get("/projects/{slug}/images/{img}/tiles/{x}/{y}")
+@media_router.get("/projects/{slug}/images/{img}/tiles/{x}/{y}")
 def get_tile(
     slug: str,
     img: str,
@@ -154,7 +157,7 @@ def get_tile(
     return FileResponse(dest, media_type="image/jpeg")
 
 
-@router.get("/projects/{slug}/images/{img}/full")
+@media_router.get("/projects/{slug}/images/{img}/full")
 def get_full(slug: str, img: str, settings: SettingsDep) -> FileResponse:
     """Imagem original (streaming; nunca redimensionada)."""
     root = project_root(settings, slug)

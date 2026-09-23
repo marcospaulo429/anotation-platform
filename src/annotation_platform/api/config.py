@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="ANNOTATE_API_HOST")
     port: int = Field(default=5200, alias="ANNOTATE_API_PORT")
     root_path: str = Field(default="", alias="ANNOTATE_ROOT_PATH")
+    web_dir: Path | None = Field(
+        default=None,
+        alias="ANNOTATE_WEB_DIR",
+        description="Diretório do SPA estático; None = autodetect <repo>/web",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

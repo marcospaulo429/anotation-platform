@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from . import classes, images, import_export, jobs, labels, projects, stats
 from .config import Settings
+
+
+def _resolve_web_dir(settings: Settings) -> Path | None:
+    """Localiza o diretório do SPA (web/). None se não existir."""
+    if settings.web_dir is not None:
+        return settings.web_dir if settings.web_dir.is_dir() else None
+    # autodetect: <repo>/web (src/annotation_platform/api/main.py -> repo root)
+    candidate = Path(__file__).resolve().parents[3] / "web"
+    return candidate if candidate.is_dir() else None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +45,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for module in (projects, classes, images, labels, import_export, jobs, stats):
         app.include_router(module.router, prefix="/annotate")
+    app.include_router(images.media_router, prefix="/annotate")
+
+    # SPA estático por último: captura só o que não casou nas rotas acima.
+    web_dir = _resolve_web_dir(settings)
+    if web_dir is not None:
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
     return app
 
 
