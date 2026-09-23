@@ -201,3 +201,29 @@ def test_revert_without_pre_404(client: TestClient, project: str) -> None:
         f"/annotate/projects/{project}/labels/P0001.jpg/revert?to=pre", headers=HEADERS
     )
     assert resp.status_code == 404
+
+
+def test_revert_after_commit_removes_manual_and_allows_save(
+    client: TestClient, project: str, settings: Settings
+) -> None:
+    """C1: commit -> revert -> save não pode travar em 409 nem exportar a label revertida."""
+    # 1. commit de uma label manual
+    _put_and_commit(client, project)
+    root = project_dir(settings, project)
+    manual = root / "labels" / "manual" / "P0001.txt"
+    assert manual.is_file()
+    # 2. existe pré-anotação do modelo
+    write_pre_labels(settings, project)
+    # 3. revert: manual some e draft volta como origem model
+    resp = client.post(
+        f"/annotate/projects/{project}/labels/P0001.jpg/revert?to=pre", headers=HEADERS
+    )
+    assert resp.status_code == 200, resp.text
+    assert not manual.exists(), "revert deve remover o manual/ (label revertida não vai pro export)"
+    # 4. save do draft revertido NÃO pode dar 409
+    doc = resp.json()
+    doc["updated_at"] = "2026-09-23T15:00:00"
+    resp = client.put(
+        f"/annotate/projects/{project}/labels/P0001.jpg/draft", json=doc, headers=HEADERS
+    )
+    assert resp.status_code == 200, f"save após revert não pode dar 409: {resp.text}"

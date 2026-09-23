@@ -87,6 +87,19 @@ def test_upload_to_unknown_project_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_reupload_same_name_rejected_409(client: TestClient, project: str) -> None:
+    """C2: reenviar o mesmo nome não pode sobrescrever a imagem ativa
+    (deixaria labels da foto anterior órfãs associadas a outra imagem)."""
+    first = _upload(client, project, "P0009.jpg", make_image_bytes(fmt="JPEG"))
+    assert first.status_code == 201
+    second = _upload(client, project, "P0009.jpg", make_image_bytes(fmt="JPEG"))
+    assert second.status_code == 201  # lote 201, mas o erro vai no relatório
+    data = second.json()
+    assert data["uploaded"] == []
+    assert data["errors"][0]["file"] == "P0009.jpg"
+    assert "409" in str(data["errors"][0]["detail"]) or "já existe" in data["errors"][0]["detail"]
+
+
 def test_list_images_pagination(client: TestClient, project: str) -> None:
     _upload(client, project, "P0002.jpg", make_image_bytes(fmt="JPEG"))
     _upload(client, project, "P0003.jpg", make_image_bytes(fmt="JPEG"))

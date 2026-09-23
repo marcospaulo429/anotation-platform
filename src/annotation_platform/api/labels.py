@@ -246,6 +246,11 @@ def revert_draft(
         updated_by=user,
         boxes=boxes,
     )
+    # Reverter para a pré-anotação torna o draft a nova fonte de edição:
+    # o manual/ anterior é removido (a label revertida NÃO pode ir para o
+    # próximo export) e o base_version do draft passa a ser a referência.
+    manual_txt = root / "labels" / "manual" / f"{stem}.txt"
+    manual_txt.unlink(missing_ok=True)
     atomic_write_json(root / "labels" / "drafts" / f"{stem}.json", doc.model_dump(mode="json"))
     record_event(root, img, EventType.REVERTED, user, to=to)
     return doc.model_dump(mode="json")

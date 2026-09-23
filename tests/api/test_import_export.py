@@ -92,13 +92,12 @@ def test_export_returns_manifest(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["version"] == 1
-    events = [
-        json.loads(line)
-        for line in (project_dir(settings, project) / "meta" / "status.jsonl")
-        .read_text()
-        .splitlines()
-    ]
-    assert any(e["event"] == "exported" and e["img"] == "-" for e in events)
+    # O evento `exported` é responsabilidade do dataset_ops.export_dataset
+    # (aqui mockado) — a rota NÃO deve duplicá-lo (bug I4 corrigido).
+    log = project_dir(settings, project) / "meta" / "status.jsonl"
+    if log.exists():
+        events = [json.loads(line) for line in log.read_text().splitlines()]
+        assert not any(e["event"] == "exported" for e in events), "rota duplicou o evento"
 
 
 def test_export_not_implemented_returns_501(

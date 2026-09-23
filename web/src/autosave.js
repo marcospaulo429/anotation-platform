@@ -101,7 +101,7 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
   }
 
   async function sync(reason) {
-    if (syncing || destroyed || conflict) return;
+    if (syncing || destroyed) return;
     if (pendingOps === 0 && reason !== "flush-empty") return;
     syncing = true;
     emit("saving");
@@ -111,6 +111,7 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
       pendingOps = 0;
       lastSyncAt = Date.now();
       backoffMs = 1000;
+      conflict = false; // sync bem-sucedido limpa conflito anterior
       syncing = false;
       emit("saved");
     } catch (err) {
@@ -128,6 +129,12 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
         backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
       }
     }
+  }
+
+  /** Limpa o estado de conflito e força nova tentativa (ex.: após revert). */
+  function resetConflict() {
+    conflict = false;
+    scheduleSync();
   }
 
   function scheduleSync() {
@@ -206,6 +213,7 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
 
     getBaseVersion: () => baseVersion,
     buildDraft,
+    resetConflict, // limpa conflito 409 e retenta (usado após revert)
 
     destroy() {
       destroyed = true;

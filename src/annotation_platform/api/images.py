@@ -75,7 +75,17 @@ async def _ingest_one(root: Path, cfg, upload: UploadFile, user: str) -> dict:
                 f"({cfg.image_width}x{cfg.image_height})"
             ),
         )
-    os.replace(incoming, root / "images" / "active" / name)
+    dest = root / "images" / "active" / name
+    if dest.exists():
+        incoming.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{name!r} já existe no projeto; reenviar substituiria a imagem "
+                "e deixaria labels da foto anterior órfãs. Renomeie o arquivo."
+            ),
+        )
+    os.replace(incoming, dest)
     record_event(root, name, EventType.UPLOADED, user)
     return {"image": name, "status": "uploaded", "width": width, "height": height}
 

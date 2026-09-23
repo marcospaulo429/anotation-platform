@@ -15,10 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from annotation_platform import dataset_ops
-from annotation_platform.contracts.status import EventType
 
 from .config import Settings
-from .deps import get_settings, project_root, record_event
+from .deps import get_settings, project_root
 from .security import verify_api_key
 
 router = APIRouter(tags=["import-export"], dependencies=[Depends(verify_api_key)])
@@ -68,7 +67,7 @@ def export_snapshot(slug: str, body: ExportRequest, settings: SettingsDep) -> di
         manifest = dataset_ops.export_dataset(root, user=body.user)
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
-    record_event(root, "-", EventType.EXPORTED, body.user, version=manifest.version)
+    # O evento `exported` já é appendado pelo próprio exporter (não duplicar).
     return manifest.model_dump(mode="json")
 
 
