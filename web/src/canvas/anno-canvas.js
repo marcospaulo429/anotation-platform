@@ -124,6 +124,7 @@ export function createAnnoCanvas(container, options) {
   let selectedId = null;
   let loupeOn = false;
   let crossOn = false;
+  let scanOn = false;               // varredura por tiles é opt-in (tecla T)
   let mouse = null;                 // posição do cursor em px de tela (stage)
   let panning = false;
   let panLast = null;
@@ -212,6 +213,8 @@ export function createAnnoCanvas(container, options) {
   }
   function renderSeen() {
     seenLayer.destroyChildren();
+    currentTileMarker = null;
+    if (!scanOn) { seenLayer.batchDraw(); return; } // varredura é opt-in (tecla T)
     for (const i of tilesSeen) {
       const tx = i % cols, ty = Math.floor(i / cols);
       seenLayer.add(new Konva.Rect({
@@ -233,6 +236,12 @@ export function createAnnoCanvas(container, options) {
     });
     seenLayer.add(currentTileMarker);
     updateScanHighlight();
+  }
+  function setScanMode(on) {
+    scanOn = !!on;
+    renderSeen();
+    updateHud();
+    if (scanOn) goToTile(currentTileIndex()); // enquadra o tile atual
   }
   function updateScanHighlight() {
     if (!currentTileMarker) return;
@@ -542,6 +551,7 @@ export function createAnnoCanvas(container, options) {
     if (panning && panLast) {
       stage.x(stage.x() + p.x - panLast.x);
       stage.y(stage.y() + p.y - panLast.y);
+      panLast = p; // BUGFIX: sem isso o delta acumulava a cada evento (pan fugia)
       applyView();
     } else if (drawStart && drawRect) {
       const cur = screenToImage(p);
@@ -583,9 +593,12 @@ export function createAnnoCanvas(container, options) {
       stage.scale({ x: next, y: next });
       stage.position({ x: ptr.x - imgPt.x * next, y: ptr.y - imgPt.y * next });
     } else {
-      // scroll simples = pan
-      stage.x(stage.x() - e.evt.deltaX);
-      stage.y(stage.y() - e.evt.deltaY);
+      // scroll simples = pan (normalizado: deltaMode 1 = linhas; cap p/ não pular longe)
+      const unit = e.evt.deltaMode === 1 ? 16 : 1;
+      const dx = clamp(e.evt.deltaX * unit, -48, 48);
+      const dy = clamp(e.evt.deltaY * unit, -48, 48);
+      stage.x(stage.x() - dx);
+      stage.y(stage.y() - dy);
     }
     applyView();
   });
@@ -604,11 +617,14 @@ export function createAnnoCanvas(container, options) {
       return;
     }
     switch (e.key) {
+      case 'h': case 'H': setMode('pan'); break;          // mão
+      case 'b': case 'B': setMode('draw'); break;         // bounding box
       case 'w': case 'W': setMode(mode === 'draw' ? 'pan' : 'draw'); break;
+      case 't': case 'T': setScanMode(!scanOn); break;    // varredura por tiles
       case 'l': case 'L': loupeOn = !loupeOn; drawOverlay(); updateHud(); break;
       case 'c': case 'C': crossOn = !crossOn; drawOverlay(); updateHud(); break;
       case 'n': case 'N': onClassRequest(); break;
-      case 'Enter': e.preventDefault(); markSeenAndAdvance(); break;
+      case 'Enter': if (scanOn) { e.preventDefault(); markSeenAndAdvance(); } break;
       case 'Delete': case 'Backspace': e.preventDefault(); deleteSelected(); break;
       case 'Escape': setMode('pan'); selectBox(null); break;
       default:
@@ -709,13 +725,12 @@ export function createAnnoCanvas(container, options) {
   // ---------------------------------------------------------------- HUD
   function updateHud() {
     const clsName = classes[currentCls] ?? `#${currentCls}`;
-    const allSeen = tilesSeen.size >= nTiles ? ' ✓ imagem varrida' : '';
+    const scan = scanOn ? `  •  tiles ${tilesSeen.size}/${nTiles}${tilesSeen.size >= nTiles ? ' ✓ imagem varrida' : ''}` : '';
     hud.textContent =
-      `modo: ${mode === 'draw' ? 'DESENHAR' : 'mover'} (W)  •  classe: ${clsName} [${currentCls + 1}]  •  ` +
-      `zoom ${(scale() * 100).toFixed(0)}%  •  ${boxes.length} caixas  •  ` +
-      `tiles ${tilesSeen.size}/${nTiles}${allSeen}\n` +
-      `[L] lupa ${loupeOn ? 'ON' : 'off'}  [C] mira ${crossOn ? 'ON' : 'off'}  ` +
-      `[Enter] tile visto  [1-9] classe  [Del] apaga  [N] nova classe  [Ctrl+Z/Y] desfaz/refaz`;
+      `modo: ${mode === 'draw' ? 'DESENHAR' : 'mover'}  •  classe: ${clsName} [${currentCls + 1}]  •  ` +
+      `zoom ${(scale() * 100).toFixed(0)}%  •  ${boxes.length} caixas${scan}\n` +
+      `[H] mão  [B] caixa  [T] varredura ${scanOn ? 'ON (Enter marca tile)' : 'off'}  ` +
+      `[L] lupa  [C] mira  [1-9] classe  [Del] apaga  [N] nova classe  [Ctrl+Z/Y]`;
   }
 
   // ---------------------------------------------------------------- API pública (interface congelada)
@@ -764,13 +779,23 @@ export function createAnnoCanvas(container, options) {
 
   renderSeen();
   renderBoxes();
-  // visão inicial: primeiro tile não visto (varredura continua de onde parou)
-  let first = 0;
-  while (first < nTiles && tilesSeen.has(first)) first++;
-  goToTile(Math.min(first, nTiles - 1));
+  // visão inicial: com varredura ON, vai ao primeiro tile não visto; senão, imagem toda
+  if (scanOn) {
+    let first = 0;
+    while (first < nTiles && tilesSeen.has(first)) first++;
+    goToTile(Math.min(first, nTiles - 1));
+  } else {
+    const s = fitScale();
+    stage.scale({ x: s, y: s });
+    stage.position({
+      x: (stage.width() - imageWidth * s) / 2,
+      y: (stage.height() - imageHeight * s) / 2,
+    });
+    applyView();
+  }
 
   return {
     getBoxes, getTilesSeen, setClasses, setBoxes,
-    undo, redo, setMode, destroy,
+    undo, redo, setMode, setScanMode, destroy,
   };
 }

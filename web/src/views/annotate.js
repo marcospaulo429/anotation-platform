@@ -185,7 +185,10 @@ export async function renderAnnotate(root, slug, project, { img: startImg } = {}
     posLabel.textContent = `img ${idx + 1}/${items.length} · ${img.name}`;
     renderStrip();
 
-    saver = createAutosave({ slug, image: img.name, api, onStatus: onSaveStatus, onConflict });
+    saver = createAutosave({
+      slug, image: img.name, api, onStatus: onSaveStatus, onConflict,
+      autosaveCfg: project?.autosave,
+    });
     let base;
     try {
       base = await saver.open();

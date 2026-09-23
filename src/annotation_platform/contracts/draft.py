@@ -15,6 +15,8 @@ SCHEMA_VERSION = 1
 
 # Edit operations tracked for correction-rate metrics and undo.
 EditOp = Literal["create", "move", "resize", "relabel", "delete", "accept"]
+# History também registra meta-ops de sessão (undo/redo não têm caixa própria).
+HistoryOp = Literal["create", "move", "resize", "relabel", "delete", "accept", "undo", "redo"]
 
 
 class DraftBox(BaseModel):
@@ -49,8 +51,8 @@ class HistoryEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     t: str
-    op: EditOp
-    box: str = Field(min_length=1, description="id of the affected box")
+    op: HistoryOp
+    box: str | None = Field(default=None, description="id da caixa afetada; None p/ undo/redo")
 
 
 class DraftDoc(BaseModel):

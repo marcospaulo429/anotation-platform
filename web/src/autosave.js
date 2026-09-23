@@ -14,8 +14,10 @@ import { getUserName } from "./auth.js";
 const DB_NAME = "anno-drafts";
 const STORE = "drafts";
 const HISTORY_K = 50;
-const EVERY_N_OPS = 5;
-const EVERY_SECONDS = 30;
+// Defaults: salvar a CADA bounding box (pedido do usuário, 2026-09-23) — o
+// debounce de 500 ms já coalesce rajadas; a config do projeto pode afrouxar.
+const DEFAULT_EVERY_N_OPS = 1;
+const DEFAULT_EVERY_SECONDS = 15;
 const DEBOUNCE_MS = 500;
 const BACKOFF_MAX_MS = 30000;
 
@@ -69,7 +71,9 @@ export function deleteLocalDraft(slug, img) {
 
 // ---------- Controlador de autosave por imagem ----------
 // Eventos de status para o indicador: "saved" | "saving" | "retrying" | "conflict"
-export function createAutosave({ slug, image, api, onStatus, onConflict }) {
+export function createAutosave({ slug, image, api, onStatus, onConflict, autosaveCfg }) {
+  const everyNOps = Math.max(1, autosaveCfg?.every_n_ops ?? DEFAULT_EVERY_N_OPS);
+  const everySeconds = Math.max(1, autosaveCfg?.every_seconds ?? DEFAULT_EVERY_SECONDS);
   let boxes = [];
   let baseVersion = null;
   let history = [];
@@ -140,8 +144,8 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
   function scheduleSync() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      if (pendingOps >= EVERY_N_OPS) sync("ops");
-      else if (Date.now() - lastSyncAt >= EVERY_SECONDS * 1000) sync("time");
+      if (pendingOps >= everyNOps) sync("ops");
+      else if (Date.now() - lastSyncAt >= everySeconds * 1000) sync("time");
       else sync("debounce"); // debounce: manda o que houver após 500 ms parado
     }, DEBOUNCE_MS);
   }
@@ -152,7 +156,7 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
 
   document.addEventListener("visibilitychange", onVisibility);
   periodicTimer = setInterval(() => {
-    if (pendingOps > 0 && Date.now() - lastSyncAt >= EVERY_SECONDS * 1000) sync("time");
+    if (pendingOps > 0 && Date.now() - lastSyncAt >= everySeconds * 1000) sync("time");
   }, 1000);
 
   return {
@@ -180,7 +184,7 @@ export function createAutosave({ slug, image, api, onStatus, onConflict }) {
       if (nextTilesSeen) tilesSeen = nextTilesSeen;
       opsSinceCommit += 1;
       pendingOps += 1;
-      history.push({ t: new Date().toISOString(), op: op?.op ?? String(op), box: op?.box ?? null });
+      history.push({ t: new Date().toISOString(), op: op?.op ?? String(op), box: op?.box ?? op?.box_id ?? null });
       saveLocalDraft(slug, image, buildDraft()); // fire-and-forget, camada 1
       emit("saving");
       scheduleSync();

@@ -50,8 +50,10 @@ class PreannotationConfig(BaseModel):
 class AutosaveConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    every_n_ops: int = Field(default=5, gt=0)
-    every_seconds: int = Field(default=30, gt=0)
+    # Default: salvar a cada operação (pedido do usuário, 2026-09-23); o
+    # debounce de 500 ms no cliente já coalesce rajadas de operações.
+    every_n_ops: int = Field(default=1, gt=0)
+    every_seconds: int = Field(default=15, gt=0)
     on_navigate: bool = True
     on_tab_hide: bool = True
 
