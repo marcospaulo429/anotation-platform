@@ -27,7 +27,7 @@ make install-api        # API + dev (rápido). Engine (torch/SAHI) é opcional: 
 API_KEY=minha-chave ANNOTATE_ROOT=$PWD/.data uv run --no-sync annotate-api
 ```
 
-- `API_KEY` — a senha da plataforma (a interface vai pedir na 1ª vez).
+- `API_KEY` — a senha da plataforma (a interface vai pedir na 1ª vez). **Obrigatória** — sem ela o servidor não sobe (erro `API_KEY não configurada` é esperado se você rodar sem definir).
 - `ANNOTATE_ROOT` — onde ficam os projetos/dados (padrão: `/raid/user_marcospaulo/annotate`).
 - A **interface web já é servida pela própria API** — não precisa de servidor separado.
 
