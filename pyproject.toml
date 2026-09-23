@@ -52,6 +52,15 @@ packages = ["src/annotation_platform"]
 # Path is relative to the workspace root layout: <workspace>/anotation-platform.
 [tool.uv.sources]
 fly-det-utils = { path = "../fly-det", editable = true }
+# CPU wheels for local dev/tests: avoids multi-GB CUDA downloads. In production
+# the engine runs INSIDE the flydet-train.sif container (GPU) via Slurm.
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
