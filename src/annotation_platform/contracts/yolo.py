@@ -3,9 +3,7 @@
 Format per line: ``class cx cy w h`` (normalized). Used by import (validating
 external labels) and commit (writing labels/manual/*.txt).
 
-Note: strict overlap/canonicalization arithmetic lives in fly_det
-(fly_det.utils.yolo_utils / overlap_filter) and is reused by the engine —
-this module only guarantees structural validity of the TXT.
+This module validates the structure of the TXT, not overlap between boxes.
 """
 
 from __future__ import annotations

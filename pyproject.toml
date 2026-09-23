@@ -20,7 +20,10 @@ dependencies = [
 
 [project.optional-dependencies]
 engine = [
-    "fly-det-utils",
+    "ultralytics>=8.3.228",
+    "supervision>=0.30.5,<0.31",
+    "torch>=2.6.0",
+    "torchvision",
     "numpy",
     "opencv-python-headless",
 ]
@@ -48,10 +51,13 @@ annotate-api = "annotation_platform.api.main:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/annotation_platform"]
 
-# fly-det is reused as an editable local dependency (no code copying).
-# Path is relative to the workspace root layout: <workspace>/anotation-platform.
+[tool.hatch.build.targets.wheel.force-include]
+"web" = "annotation_platform/web"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/web", "/tests", "/scripts", "/slurm", "/Makefile", "/uv.lock", "/.python-version"]
+
 [tool.uv.sources]
-fly-det-utils = { path = "../fly-det", editable = true }
 # CPU wheels for local dev/tests: avoids multi-GB CUDA downloads. In production
 # the engine runs INSIDE the flydet-train.sif container (GPU) via Slurm.
 torch = [{ index = "pytorch-cpu" }]

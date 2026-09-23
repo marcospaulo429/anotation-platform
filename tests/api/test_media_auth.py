@@ -72,3 +72,19 @@ def test_api_routes_win_over_spa_mount(settings: Settings, tmp_path: Path) -> No
 def test_create_app_requires_api_key(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="API_KEY"):
         create_app(Settings(api_key=None, annotate_root=tmp_path))
+
+
+def test_packaged_web_precedes_checkout(settings: Settings, tmp_path: Path, monkeypatch) -> None:
+    from annotation_platform.api import main
+
+    module = tmp_path / "site-packages" / "annotation_platform" / "api" / "main.py"
+    web = module.parents[1] / "web"
+    web.mkdir(parents=True)
+    (web / "index.html").write_text("packaged SPA", encoding="utf-8")
+    checkout_web = module.parents[3] / "web"
+    checkout_web.mkdir()
+    (checkout_web / "index.html").write_text("checkout SPA", encoding="utf-8")
+    monkeypatch.setattr(main, "__file__", str(module))
+    settings.web_dir = None
+    assert main._resolve_web_dir(settings) == web
+    assert TestClient(main.create_app(settings)).get("/").text == "packaged SPA"

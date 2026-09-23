@@ -2,7 +2,7 @@
 
 Module-level imports are intentionally light (stdlib + contracts only) so that
 tests and pure orchestration code can import the ``Predictor`` protocol without
-pulling torch/ultralytics. Heavy deps (cv2, numpy, ultralytics via fly_det)
+pulling torch/ultralytics. Heavy deps (cv2, numpy, ultralytics, supervision)
 are imported lazily inside ``UltralyticsPredictor``.
 
 Global rules enforced here:
@@ -63,7 +63,7 @@ def _detections_to_preboxes(detections: object, width: int, height: int) -> list
 
 
 class UltralyticsPredictor:
-    """Real predictor: Ultralytics YOLO, plain or SAHI-sliced (reuses fly_det helpers).
+    """Real predictor using Ultralytics YOLO and Supervision sliced inference.
 
     The checkpoint is loaded lazily exactly once, on the first call.
     """
@@ -92,7 +92,6 @@ class UltralyticsPredictor:
         self.device = device
         self._model: object | None = None
         self._slicer: object | None = None
-        self._run_plain: object | None = None
 
     @classmethod
     def from_config(cls, cfg: PreannotationConfig, *, device: str = "cpu") -> UltralyticsPredictor:
@@ -114,28 +113,36 @@ class UltralyticsPredictor:
         if self._model is not None:
             return
         import cv2
+        import supervision as sv
+        from ultralytics import YOLO
 
         cv2.setNumThreads(1)
-        from fly_det.utils.sahi_helper import make_slicer, run_plain
-        from fly_det.utils.yolo_utils import load_model
-
-        model = load_model(str(self.checkpoint), self.device)
-        self._model = model
-        self._run_plain = run_plain
+        model = YOLO(str(self.checkpoint))
+        model.to(self.device)
         if self.engine == "sahi":
             overlap_px = int(self.slice_size * self.slice_overlap)
-            self._slicer = make_slicer(
-                model,
-                (self.slice_size, self.slice_size),
-                (overlap_px, overlap_px),
-                1,  # thread workers: 1 (shared machine / GPU-safest)
-                self.device,
-                self.conf,
-                self.iou,
-                self.imgsz,
-                "NON_MAX_SUPPRESSION",
-                0.5,  # cross-tile NMS IoU (fly_det default)
+
+            def predict_slice(frame):
+                result = model.predict(
+                    frame,
+                    verbose=False,
+                    conf=self.conf,
+                    iou=self.iou,
+                    imgsz=self.imgsz,
+                    max_det=1000,
+                    device=self.device,
+                )[0]
+                return sv.Detections.from_ultralytics(result)
+
+            self._slicer = sv.InferenceSlicer(
+                callback=predict_slice,
+                slice_wh=(self.slice_size, self.slice_size),
+                overlap_wh=(overlap_px, overlap_px),
+                overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+                iou_threshold=0.5,
+                thread_workers=1,
             )
+        self._model = model
 
     def __call__(self, image_path: Path) -> list[PreBox]:
         self._ensure_loaded()
@@ -151,9 +158,18 @@ class UltralyticsPredictor:
             if self.engine == "sahi":
                 detections = self._slicer(img)
             else:
-                detections = self._run_plain(
-                    self._model, img, self.device, self.conf, self.iou, self.imgsz
-                )
+                import supervision as sv
+
+                result = self._model.predict(
+                    img,
+                    verbose=False,
+                    conf=self.conf,
+                    iou=self.iou,
+                    imgsz=self.imgsz,
+                    device=self.device,
+                    max_det=600,
+                )[0]
+                detections = sv.Detections.from_ultralytics(result)
         finally:
             del img  # one image at a time: release the frame immediately
         return _detections_to_preboxes(detections, width, height)

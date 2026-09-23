@@ -27,9 +27,11 @@ def _resolve_web_dir(settings: Settings) -> Path | None:
     """Localiza o diretório do SPA (web/). None se não existir."""
     if settings.web_dir is not None:
         return settings.web_dir if settings.web_dir.is_dir() else None
-    # autodetect: <repo>/web (src/annotation_platform/api/main.py -> repo root)
-    candidate = Path(__file__).resolve().parents[3] / "web"
-    return candidate if candidate.is_dir() else None
+    module = Path(__file__).resolve()
+    for candidate in (module.parents[1] / "web", module.parents[3] / "web"):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -42,7 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if not settings.api_key:
         raise RuntimeError(
             "API_KEY não configurada: defina a variável de ambiente API_KEY "
-            "antes de subir o annotate-api (ver fly_det_api/gen_key.py)."
+            "antes de subir o annotate-api."
         )
     app = FastAPI(
         title="annotation-platform-api",
