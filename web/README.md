@@ -9,23 +9,11 @@ criação, página do projeto (tabs), autosave e a tela de anotação em 3 zonas
 
 ### Contra a API real
 
-1. Suba a API (FastAPI, prefixo `/annotate`) conforme `api/README.md`.
-2. Sirva esta pasta estaticamente **na mesma origem do nginx** (recomendado) ou
-   aponte para outra origem:
-
-   ```bash
-   cd web
-   python -m http.server 8080
-   # abra http://localhost:8080/
-   ```
-
-3. Para API em outra origem, edite `index.html` e defina antes dos módulos:
-
-   ```html
-   <script>window.__API_BASE__ = "http://localhost:8000/annotate";</script>
-   ```
-
-4. Na primeira chamada, o app pede a chave de API (header `X-API-Key`) uma vez
+1. Siga o [guia de primeira execução](../README.md). A API serve também esta interface
+   em **http://localhost:5200/**; não é necessário um servidor estático separado.
+2. Mantenha interface e API na mesma origem. Outra origem exigiria configuração CORS
+   explícita no backend, que não está habilitada por padrão.
+3. Na primeira chamada, o app pede a chave de API (header `X-API-Key`) uma vez
    e guarda em `sessionStorage`.
 
 ### Com o servidor de mock (sem backend)
@@ -86,7 +74,7 @@ fallback para o stub.
 
 `src/autosave.js`: cada `onChange` do canvas grava o draft no IndexedDB
 (`anno-drafts`, chave `${slug}/${img}`) **antes** de qualquer rede. O `PUT` do
-draft dispara por 5 ops OU 30 s OU navegação OU `visibilitychange=hidden` —
+draft usa a configuração do projeto (defaults: 1 op / 15 s), navegação e `visibilitychange=hidden` —
 o que vier primeiro (debounce de 500 ms). Falhas → retry com backoff
 exponencial; `409` → aviso não-destrutivo e o rascunho local é preservado.
 Ao abrir uma imagem, se houver rascunho local divergente do servidor, um
