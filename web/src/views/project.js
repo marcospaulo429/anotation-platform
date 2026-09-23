@@ -23,8 +23,11 @@ export async function renderProject(root, slug, tab, params) {
   const project = await api.getProject(slug).catch(() => null);
   const stats = await api.getStats(slug).catch(() => null);
 
-  const total = stats?.total ?? project?.total_images ?? 0;
-  const done = stats?.done ?? 0;
+  const total = stats?.images ?? project?.total_images ?? 0;
+  const done = stats?.status_counts
+    ? (stats.status_counts.done ?? 0) + (stats.status_counts.draft_committed ?? 0)
+      + (stats.status_counts.imported ?? 0)
+    : 0;
   const pct = total > 0 ? done / total : 0;
 
   const enc = encodeURIComponent(slug);

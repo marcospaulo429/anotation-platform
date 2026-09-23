@@ -44,7 +44,10 @@ def test_create_project_with_checkpoint(
     )
     resp = client.post(
         "/annotate/projects",
-        json={"name": "Pre Anotado", "checkpoint": "/fake/best.pt"},
+        json={
+            "name": "Pre Anotado",
+            "preannotation": {"enabled": True, "checkpoint": "/fake/best.pt"},
+        },
         headers=HEADERS,
     )
     assert resp.status_code == 201, resp.text
@@ -63,7 +66,10 @@ def test_create_project_checkpoint_unreadable(
     monkeypatch.setattr("annotation_platform.api.projects._load_model_names", _boom)
     resp = client.post(
         "/annotate/projects",
-        json={"name": "Ckpt Ruim", "checkpoint": "/nope.pt"},
+        json={
+            "name": "Ckpt Ruim",
+            "preannotation": {"enabled": True, "checkpoint": "/nope.pt"},
+        },
         headers=HEADERS,
     )
     assert resp.status_code == 422

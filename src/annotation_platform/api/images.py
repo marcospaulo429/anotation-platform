@@ -41,21 +41,13 @@ CHUNK_SIZE = 1 << 20  # 1 MiB
 THUMB_SIZE = 320
 
 
-@router.post("/projects/{slug}/images", status_code=201)
-async def upload_image(
-    slug: str,
-    settings: SettingsDep,
-    file: Annotated[UploadFile, File()],
-    user: str = "api",
-) -> dict:
-    """Upload multipart chunked -> incoming/; valida -> active/ + evento.
+async def _ingest_one(root: Path, cfg, upload: UploadFile, user: str) -> dict:
+    """Ingere UM arquivo: incoming/ -> valida -> active/ + evento uploaded.
 
     Validação: extensão jpg/jpeg/png, formato real via Pillow e dimensões
-    exatamente image_width x image_height do projeto. Inválida -> 422.
+    exatamente image_width x image_height do projeto.
     """
-    root = project_root(settings, slug)
-    cfg = load_cfg(root)
-    name = Path(file.filename or "").name
+    name = Path(upload.filename or "").name
     safe_img(name)
     if Path(name).suffix.lower() not in ALLOWED_EXT:
         raise HTTPException(
@@ -63,7 +55,7 @@ async def upload_image(
         )
     incoming = root / "images" / "incoming" / name
     with open(incoming, "wb") as fh:
-        while chunk := await file.read(CHUNK_SIZE):
+        while chunk := await upload.read(CHUNK_SIZE):
             fh.write(chunk)
     try:
         with Image.open(incoming) as im:
@@ -88,6 +80,30 @@ async def upload_image(
     return {"image": name, "status": "uploaded", "width": width, "height": height}
 
 
+@router.post("/projects/{slug}/images", status_code=201)
+async def upload_images(
+    slug: str,
+    settings: SettingsDep,
+    files: Annotated[list[UploadFile], File()],
+    user: str = "api",
+) -> dict:
+    """Upload multipart chunked de um ou mais arquivos (campo ``files``).
+
+    Cada arquivo é validado isoladamente: falhas não abortam o lote —
+    entram no relatório ``errors`` e o arquivo inválido é descartado.
+    """
+    root = project_root(settings, slug)
+    cfg = load_cfg(root)
+    uploaded: list[dict] = []
+    errors: list[dict] = []
+    for upload in files:
+        try:
+            uploaded.append(await _ingest_one(root, cfg, upload, user))
+        except HTTPException as exc:
+            errors.append({"file": upload.filename, "detail": exc.detail})
+    return {"uploaded": uploaded, "errors": errors}
+
+
 @router.get("/projects/{slug}/images")
 def list_images(
     slug: str,
@@ -101,15 +117,35 @@ def list_images(
     active = root / "images" / "active"
     names = sorted(p.name for p in active.iterdir() if p.is_file()) if active.is_dir() else []
     statuses = current_status(root / "meta" / "status.jsonl")
-    items = [
-        {"img": name, "status": statuses[name].event if name in statuses else "unlabeled"}
-        for name in names
-    ]
+    items = [_image_item(name, statuses) for name in names]
     if status is not None:
-        items = [item for item in items if item["status"] == status]
+        items = [
+            item for item in items if item["display_status"] == status or item["status"] == status
+        ]
     page = items[cursor : cursor + page_size]
     next_cursor = cursor + page_size if cursor + page_size < len(items) else None
     return {"items": page, "next_cursor": next_cursor, "total": len(items)}
+
+
+# Evento cru (status.jsonl) -> estado visual do strip de thumbs (seção 8 do MD).
+_DISPLAY_STATUS = {
+    "uploaded": "unlabeled",
+    "imported": "done",
+    "prelabeled": "prelabeled",
+    "preannotate_failed": "unlabeled",
+    "draft_saved": "draft",
+    "draft_committed": "done",
+    "done": "done",
+    "reopened": "prelabeled",
+    "reverted": "prelabeled",
+}
+
+
+def _image_item(name: str, statuses) -> dict:
+    if name in statuses:
+        raw = statuses[name].event
+        return {"img": name, "status": raw, "display_status": _DISPLAY_STATUS.get(raw, "unlabeled")}
+    return {"img": name, "status": "unlabeled", "display_status": "unlabeled"}
 
 
 @media_router.get("/projects/{slug}/images/{img}/thumb")

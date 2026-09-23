@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from annotation_platform.contracts import classes as class_rules
 from annotation_platform.contracts.common import utcnow_iso
-from annotation_platform.contracts.project import PreannotationConfig, ProjectConfig, load_project
+from annotation_platform.contracts.project import (
+    PreannotationConfig,
+    ProjectConfig,
+    SliceConfig,
+    load_project,
+)
 from annotation_platform.contracts.status import current_status
 
 from .config import Settings
@@ -30,6 +35,18 @@ router = APIRouter(tags=["projects"], dependencies=[Depends(verify_api_key)])
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+class PreannotationCreate(BaseModel):
+    """Config de pré-anotação no create (espelha o wizard de 3 caminhos)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    checkpoint: str | None = None
+    conf_threshold: float = Field(default=0.25, gt=0.0, lt=1.0)
+    iou_threshold: float = Field(default=0.7, gt=0.0, lt=1.0)
+    slice: SliceConfig | None = None
+
+
 class ProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -37,7 +54,7 @@ class ProjectCreate(BaseModel):
     slug: str | None = None
     created_by: str = Field(default="api", min_length=1)
     classes: list[str] | None = None
-    checkpoint: str | None = None
+    preannotation: PreannotationCreate | None = None
     image_width: int = Field(default=1920, gt=0)
     image_height: int = Field(default=1080, gt=0)
 
@@ -88,19 +105,31 @@ def create_project(body: ProjectCreate, settings: SettingsDep) -> dict:
     Sem checkpoint: classes vêm do body.
     """
     slug = body.slug or _slugify(body.name)
-    if body.checkpoint:
+    pre = body.preannotation
+    if pre and pre.enabled:
+        if not pre.checkpoint:
+            raise HTTPException(
+                status_code=422,
+                detail="preannotation.enabled=true exige um checkpoint",
+            )
         try:
-            names = _load_model_names(body.checkpoint)
+            names = _load_model_names(pre.checkpoint)
         except Exception as exc:
             raise HTTPException(
                 status_code=422,
-                detail=f"falha ao ler checkpoint {body.checkpoint!r}: {exc}",
+                detail=f"falha ao ler checkpoint {pre.checkpoint!r}: {exc}",
             ) from exc
         try:
             classes = class_rules.initial_classes_from_checkpoint(names)
         except class_rules.ClassListError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        preannotation = PreannotationConfig(enabled=True, checkpoint=body.checkpoint)
+        preannotation = PreannotationConfig(
+            enabled=True,
+            checkpoint=pre.checkpoint,
+            conf_threshold=pre.conf_threshold,
+            iou_threshold=pre.iou_threshold,
+            slice=pre.slice or SliceConfig(),
+        )
     else:
         if not body.classes:
             raise HTTPException(

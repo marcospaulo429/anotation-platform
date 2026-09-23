@@ -16,7 +16,7 @@ from .conftest import HEADERS, make_image_bytes, project_dir
 def _upload(client: TestClient, slug: str, name: str, content: bytes) -> object:
     return client.post(
         f"/annotate/projects/{slug}/images",
-        files={"file": (name, content, "application/octet-stream")},
+        files=[("files", (name, content, "application/octet-stream"))],
         headers=HEADERS,
     )
 
@@ -24,7 +24,9 @@ def _upload(client: TestClient, slug: str, name: str, content: bytes) -> object:
 def test_upload_valid_image(client: TestClient, project: str, settings: Settings) -> None:
     resp = _upload(client, project, "P0002.jpg", make_image_bytes(fmt="JPEG"))
     assert resp.status_code == 201, resp.text
-    assert resp.json()["image"] == "P0002.jpg"
+    data = resp.json()
+    assert data["uploaded"][0]["image"] == "P0002.jpg"
+    assert data["errors"] == []
     root = project_dir(settings, project)
     assert (root / "images" / "active" / "P0002.jpg").is_file()
     assert not (root / "images" / "incoming" / "P0002.jpg").exists()
@@ -34,22 +36,48 @@ def test_upload_valid_image(client: TestClient, project: str, settings: Settings
     assert any(e["event"] == "uploaded" and e["img"] == "P0002.jpg" for e in events)
 
 
-def test_upload_wrong_dimensions_returns_422(client: TestClient, project: str) -> None:
-    resp = _upload(client, project, "small.jpg", make_image_bytes(640, 480, "JPEG"))
-    assert resp.status_code == 422
-    assert "dimensões" in resp.json()["detail"]
-
-
-def test_upload_bad_extension_returns_422(client: TestClient, project: str) -> None:
-    resp = _upload(client, project, "x.gif", make_image_bytes(fmt="JPEG"))
-    assert resp.status_code == 422
-
-
-def test_upload_not_an_image_returns_422(
+def test_upload_multi_partial_errors_do_not_abort(
     client: TestClient, project: str, settings: Settings
 ) -> None:
+    """Lote misto: válidas entram, inválidas viram relatório (sem abortar)."""
+    resp = client.post(
+        f"/annotate/projects/{project}/images",
+        files=[
+            ("files", ("ok1.jpg", make_image_bytes(fmt="JPEG"), "image/jpeg")),
+            ("files", ("bad.gif", make_image_bytes(fmt="JPEG"), "image/gif")),
+            ("files", ("ok2.jpg", make_image_bytes(fmt="JPEG"), "image/jpeg")),
+        ],
+        headers=HEADERS,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert [u["image"] for u in data["uploaded"]] == ["ok1.jpg", "ok2.jpg"]
+    assert len(data["errors"]) == 1
+    assert data["errors"][0]["file"] == "bad.gif"
+    root = project_dir(settings, project)
+    assert (root / "images" / "active" / "ok1.jpg").is_file()
+    assert (root / "images" / "active" / "ok2.jpg").is_file()
+    assert not (root / "images" / "active" / "bad.gif").exists()
+
+
+def test_upload_wrong_dimensions_reported_in_errors(client: TestClient, project: str) -> None:
+    resp = _upload(client, project, "small.jpg", make_image_bytes(640, 480, "JPEG"))
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["uploaded"] == []
+    assert "dimensões" in data["errors"][0]["detail"]
+
+
+def test_upload_bad_extension_reported(client: TestClient, project: str) -> None:
+    resp = _upload(client, project, "x.gif", make_image_bytes(fmt="JPEG"))
+    assert resp.status_code == 201
+    assert resp.json()["errors"][0]["file"] == "x.gif"
+
+
+def test_upload_not_an_image_reported(client: TestClient, project: str, settings: Settings) -> None:
     resp = _upload(client, project, "fake.jpg", b"not an image at all")
-    assert resp.status_code == 422
+    assert resp.status_code == 201
+    assert resp.json()["errors"]
     root = project_dir(settings, project)
     assert not (root / "images" / "incoming" / "fake.jpg").exists()
 
@@ -75,10 +103,16 @@ def test_list_images_pagination(client: TestClient, project: str) -> None:
 
 def test_list_images_filter_by_status(client: TestClient, project: str) -> None:
     _upload(client, project, "P0002.jpg", make_image_bytes(fmt="JPEG"))
+    # filtro pelo evento cru
     resp = client.get(f"/annotate/projects/{project}/images?status=uploaded", headers=HEADERS)
     assert [i["img"] for i in resp.json()["items"]] == ["P0002.jpg"]
+    # filtro pelo status de exibição (uploaded -> unlabeled na UI)
     resp = client.get(f"/annotate/projects/{project}/images?status=unlabeled", headers=HEADERS)
-    assert [i["img"] for i in resp.json()["items"]] == ["P0001.jpg"]
+    assert [i["img"] for i in resp.json()["items"]] == ["P0001.jpg", "P0002.jpg"]
+    # item expõe os dois
+    item = resp.json()["items"][1]
+    assert item["status"] == "uploaded"
+    assert item["display_status"] == "unlabeled"
 
 
 def test_thumb_cached(client: TestClient, project: str, settings: Settings) -> None:

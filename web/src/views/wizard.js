@@ -38,7 +38,7 @@ export async function renderWizard(root) {
       },
     });
     const slugInput = el("input", {
-      type: "text", required: true, pattern: "[a-z0-9-]+",
+      type: "text", required: true, pattern: "[a-z0-9\\-]+",
       value: state.slug,
       oninput: (e) => { state.slugTouched = true; state.slug = e.target.value; },
     });
@@ -140,7 +140,6 @@ export async function renderWizard(root) {
       body.classes = state.classesText.split("\n").map((s) => s.trim()).filter(Boolean);
       body.preannotation = { enabled: false };
     } else {
-      body.source = "import";
       body.preannotation = { enabled: false };
     }
     try {

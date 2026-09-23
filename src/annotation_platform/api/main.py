@@ -5,10 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from . import classes, images, import_export, jobs, labels, projects, stats
 from .config import Settings
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles sem cache: o SPA é servido pela mesma app em dev e o
+    navegador cacheia módulos ES agressivamente por URL. Em produção o nginx
+    pode sobrepor cache explícito."""
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        resp: Response = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
 
 def _resolve_web_dir(settings: Settings) -> Path | None:
@@ -50,7 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # SPA estático por último: captura só o que não casou nas rotas acima.
     web_dir = _resolve_web_dir(settings)
     if web_dir is not None:
-        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+        app.mount("/", NoCacheStaticFiles(directory=web_dir, html=True), name="web")
     return app
 
 

@@ -7,7 +7,13 @@ import { getApiKey, ensureApiKey, clearApiKey } from "./auth.js";
 export class ApiError extends Error {
   constructor(status, payload) {
     const detail = payload && (payload.detail ?? payload.message);
-    super(detail ? String(detail) : `Erro HTTP ${status}`);
+    const msg =
+      detail == null
+        ? `Erro HTTP ${status}`
+        : typeof detail === "string"
+          ? detail
+          : JSON.stringify(detail);
+    super(msg);
     this.status = status;
     this.payload = payload;
   }

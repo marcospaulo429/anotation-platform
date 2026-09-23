@@ -80,8 +80,8 @@ export async function renderImages(root, slug) {
   }
 
   function thumbCard(img) {
-    const name = img.name ?? img.image ?? img;
-    const status = img.status ?? "unlabeled";
+    const name = img.img ?? img.name ?? img.image ?? img;
+    const status = img.display_status ?? img.status ?? "unlabeled";
     return el("a", {
       class: "thumb-card",
       href: `#/p/${enc}/anotar?img=${encodeURIComponent(name)}`,

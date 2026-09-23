@@ -40,7 +40,10 @@ export async function renderAnnotate(root, slug, project, { img: startImg } = {}
   const res = await api.listImages(slug).catch((err) => { showError(root, err); return null; });
   if (!res) return () => {};
   const items = (Array.isArray(res) ? res : res.images ?? res.items ?? [])
-    .map((i) => ({ name: i.name ?? i.image ?? i, status: i.status ?? "unlabeled" }));
+    .map((i) => ({
+      name: i.img ?? i.name ?? i.image ?? i,
+      status: i.display_status ?? i.status ?? "unlabeled",
+    }));
   items.sort((a, b) => (QUEUE_ORDER[a.status] ?? 9) - (QUEUE_ORDER[b.status] ?? 9));
   if (items.length === 0) {
     root.append(el("p", { class: "muted", text: "Sem imagens. Faça upload na aba Imagens." }));
