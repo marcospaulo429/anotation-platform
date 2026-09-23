@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fly-det · Plataforma de Anotação</title>
+  <link rel="stylesheet" href="./styles/main.css" />
+  <script>
+    // Defina window.__API_BASE__ aqui para apontar para outra origem da API.
+    // Padrão: "/annotate" (mesma origem, atrás do nginx).
+    // window.__API_BASE__ = "http://localhost:8000/annotate";
+    // Ative o servidor de mock com: index.html?mock
+    window.__USE_MOCK__ = new URLSearchParams(location.search).has("mock");
+  </script>
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+  <!-- Konva vendored (UMD global `Konva`) — exigido por src/canvas/anno-canvas.js -->
+  <script src="./vendor/konva.min.js"></script>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Demo — anno-canvas (fly-det)</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0e1013; color: #ddd;
+         display: flex; flex-direction: column; height: 100vh; }
+  #toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+             padding: 8px 10px; background: #1b1e25; border-bottom: 1px solid #333; }
+  #toolbar button { background: #2a2f3a; color: #ddd; border: 1px solid #444;
+                    border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+  #toolbar button:hover { background: #353c4b; }
+  #toolbar .titulo { font-weight: 600; margin-right: 8px; }
+  #canvas-host { flex: 1; min-height: 0; }
+  #saida { margin: 0; max-height: 150px; overflow: auto; background: #11141a;
+           border-top: 1px solid #333; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <span class="titulo">anno-canvas · demo mockada</span>
+  <button id="btn-pan">Modo mover</button>
+  <button id="btn-draw">Modo desenhar (W)</button>
+  <button id="btn-undo">Desfazer (Ctrl+Z)</button>
+  <button id="btn-redo">Refazer (Ctrl+Y)</button>
+  <button id="btn-loupe">Lupa (L)</button>
+  <button id="btn-boxes">getBoxes()</button>
+  <button id="btn-tiles">getTilesSeen()</button>
+  <button id="btn-classes">setClasses demo</button>
+</div>
+<div id="canvas-host"></div>
+<pre id="saida">Eventos onChange e saídas dos botões aparecem aqui.
+Atalhos: scroll=pan · ctrl+scroll=zoom · arrastar vazio=pan · W desenhar · Enter marca tile · 1-9 classe · Del apaga · L lupa · C mira · N nova classe.
+</pre>
+
+<script src="../../vendor/konva.min.js"></script>
+<script type="module">
+import { createAnnoCanvas } from './anno-canvas.js';
+
+// ------------------------------------------------------------------ dados mockados
+const W = 1920, H = 1080, TILE = 640;
+const saida = document.getElementById('saida');
+const log = (msg) => { saida.textContent = msg; };
+
+// Gera um tile fake (dataURL): grade cinza + rótulo + "moscas" pseudo-aleatórias
+// determinísticas (LCG com semente por tile). Nenhum backend envolvido.
+const tileCache = new Map();
+function lcg(seed) {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+function mockTileUrl(x, y) {
+  const key = x + ',' + y;
+  if (tileCache.has(key)) return tileCache.get(key);
+  const w = Math.min(TILE, W - x * TILE), h = Math.min(TILE, H - y * TILE);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = (x + y) % 2 ? '#3a404c' : '#353b46';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  // grade de 64px para noção de escala
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  for (let gx = 64; gx < w; gx += 64) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+  for (let gy = 64; gy < h; gy += 64) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+  // "moscas" (~40px e menores), determinísticas por tile
+  const rnd = lcg(x * 73856093 ^ y * 19349663);
+  for (let i = 0; i < 14; i++) {
+    const fx = rnd() * w, fy = rnd() * h, r = 8 + rnd() * 14;
+    ctx.fillStyle = `rgba(20,22,26,${0.55 + rnd() * 0.4})`;
+    ctx.beginPath(); ctx.ellipse(fx, fy, r, r * 0.7, rnd() * Math.PI, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText(`tile ${x},${y}`, 10, 26);
+  const url = c.toDataURL();
+  tileCache.set(key, url);
+  return url;
+}
+
+let classes = ['MD', 'MV'];
+const boxesIniciais = [
+  // 1 caixa do modelo NÃO aceita (aparece tracejada)
+  { id: 'b-modelo-pendente', cls: 0, cx: 0.30, cy: 0.35, w: 0.025, h: 0.040,
+    origin: 'model', model_conf: 0.83, edited: false, edit_ops: [] },
+  // 1 caixa do modelo já aceita (sólida)
+  { id: 'b-modelo-aceita', cls: 1, cx: 0.62, cy: 0.55, w: 0.022, h: 0.038,
+    origin: 'model', model_conf: 0.71, edited: false, edit_ops: ['accept'] },
+  // 1 caixa humana (sólida)
+  { id: 'b-humana', cls: 1, cx: 0.80, cy: 0.25, w: 0.020, h: 0.035,
+    origin: 'human', edited: true, edit_ops: ['create'] },
+];
+
+const handle = createAnnoCanvas(document.getElementById('canvas-host'), {
+  imageWidth: W,
+  imageHeight: H,
+  tileSize: TILE,
+  classes,
+  tilesUrl: mockTileUrl,
+  boxes: boxesIniciais,
+  initialTilesSeen: [],
+  onChange(boxes, op) {
+    log(`onChange → op: ${JSON.stringify(op)}\ncaixas: ${boxes.length}\n` +
+        JSON.stringify(boxes, null, 2));
+  },
+  onClassRequest() {
+    // no shell real isto abre o modal de nova classe; aqui, prompt simples
+    const nome = prompt('Nome da nova classe (entra NO FINAL da lista):');
+    if (!nome) return;
+    classes = classes.concat([nome.trim().toUpperCase()]);
+    handle.setClasses(classes);
+    log(`Classe adicionada. classes = ${JSON.stringify(classes)}`);
+  },
+});
+
+// ------------------------------------------------------------------ botões
+document.getElementById('btn-pan').onclick = () => handle.setMode('pan');
+document.getElementById('btn-draw').onclick = () => handle.setMode('draw');
+document.getElementById('btn-undo').onclick = () => handle.undo();
+document.getElementById('btn-redo').onclick = () => handle.redo();
+document.getElementById('btn-loupe').onclick = () =>
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l' }));
+document.getElementById('btn-boxes').onclick = () =>
+  log('getBoxes() →\n' + JSON.stringify(handle.getBoxes(), null, 2));
+document.getElementById('btn-tiles').onclick = () =>
+  log('getTilesSeen() → ' + JSON.stringify(handle.getTilesSeen()));
+document.getElementById('btn-classes').onclick = () => {
+  classes = ['MD', 'MV', 'INS']; // simula o shell adicionando classe ao final
+  handle.setClasses(classes);
+  log('setClasses([\'MD\',\'MV\',\'INS\']) — tecla 3 agora rotula INS.');
+};
+</script>
+</body>
+</html>

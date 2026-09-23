@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "annotation-platform"
+description = "Roboflow-style pre-annotation platform for YOLO fly-trap datasets (contracts, engine, api)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Marcos Paulo Caetano" }]
+version = "0.1.0"
+
+# Core = contracts only (schemas + validators). Engine and api are extras so
+# contracts stay lightweight and importable everywhere.
+dependencies = [
+    "pydantic>=2.0",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+engine = [
+    "ultralytics>=8.3.228",
+    "supervision>=0.30.5,<0.31",
+    "torch>=2.6.0",
+    "torchvision",
+    "numpy",
+    "opencv-python-headless",
+]
+api = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic-settings",
+    "pillow",
+    "numpy",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML",
+]
+
+[project.scripts]
+annotate-engine = "annotation_platform.engine.cli:main"
+annotate-api = "annotation_platform.api.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/annotation_platform"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"web" = "annotation_platform/web"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/web", "/tests", "/scripts", "/slurm", "/Makefile", "/uv.lock", "/.python-version"]
+
+[tool.uv.sources]
+# CPU wheels for local dev/tests: avoids multi-GB CUDA downloads. In production
+# the engine runs INSIDE the flydet-train.sif container (GPU) via Slurm.
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+mypy_path = "src"
+python_version = "3.12"
+ignore_missing_imports = true
